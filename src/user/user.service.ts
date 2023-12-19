@@ -11,26 +11,76 @@ import { ResponseUserListDto, SessionDto } from './dtos/response-user-list.dto';
 import { ResponseStatisticDto } from './dtos/response-statistic.dto';
 import { SessionService } from 'src/session/session.service';
 import { RequestChangeNameDto } from './dtos/request-change-name.dto';
+import { MailingService } from 'src/mailing/mailing.service';
+import { OAuth2Client } from 'google-auth-library';
+import { RequestCreateUserByGoogleDto } from './dtos/request-create-user-by-google.dto';
+import { RequestCreateUserByFacebook } from './dtos/request-create-user-by-facebook.dto';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(User) private userRepository: Repository<User>,
     private readonly sessionService: SessionService,
+    private readonly mailingService: MailingService,
   ) {}
 
   async create(createUserDto: RequestCreateUserDto): Promise<void> {
     try {
-      const existUser = await this.userRepository.findOne({
+      const existUser: User = await this.userRepository.findOne({
         where: { email: createUserDto.email },
       });
       if (existUser) throw 'Email already exists';
-
       const user = new User();
       user.email = createUserDto.email;
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
       user.password = hashedPassword;
+      const savedUser = await this.userRepository.save(user);
+      await this.mailingService.sendVerificationEMail(
+        user.email,
+        `http://${process.env.HOST}:${process.env.PORT}/user/verify/${savedUser.id}`,
+      );
+    } catch (error) {
+      throw new Error(error);
+    }
+  }
 
+  async createUserByGoogle(
+    createUserByGoogleDto: RequestCreateUserByGoogleDto,
+  ): Promise<void> {
+    try {
+      const oAuth2Client = new OAuth2Client(process.env.CLIENT_ID);
+      const tokenInfo = await oAuth2Client.verifyIdToken({
+        idToken: createUserByGoogleDto.credential,
+        audience: process.env.CLIENT_ID,
+      });
+      const payload = tokenInfo.getPayload();
+      const { email, name } = payload;
+      const existUser: User = await this.userRepository.findOne({
+        where: { email: email },
+      });
+      if (existUser) throw 'Email already exists';
+      const user = new User();
+      user.email = email;
+      user.name = name;
+      user.isVerified = true;
+      await this.userRepository.save(user);
+    } catch (error) {
+      throw new Error(error);
+    }
+  }
+
+  async createUserByFacebook(
+    createUserByFacebook: RequestCreateUserByFacebook,
+  ): Promise<void> {
+    try {
+      const existUser: User = await this.userRepository.findOneBy({
+        email: createUserByFacebook.email,
+      });
+      if (existUser) throw 'Email already exists';
+      const user = new User();
+      user.email = createUserByFacebook.email;
+      user.name = createUserByFacebook.name;
+      user.isVerified = true;
       await this.userRepository.save(user);
     } catch (error) {
       throw new Error(error);
@@ -43,6 +93,7 @@ export class UserService {
         email: loginDto.email,
       });
 
+      if (!user.password) throw 'Login with google or facebook';
       if (!user) throw 'User not found';
       if (!(await bcrypt.compare(loginDto.password, user.password)))
         throw 'Wrong password';
@@ -60,6 +111,7 @@ export class UserService {
       responseProfileDto.name = user.name;
       responseProfileDto.email = user.email;
       responseProfileDto.isVerified = user.isVerified;
+      if (!user.password) responseProfileDto.isPasswordNull = true;
       return responseProfileDto;
     } catch (error) {
       throw new Error(error);
@@ -74,6 +126,7 @@ export class UserService {
       const user = await this.userRepository.findOneBy({ id });
 
       if (
+        requestChangePasswordDto.oldPassword &&
         !(await bcrypt.compare(
           requestChangePasswordDto.oldPassword,
           user.password,
@@ -175,6 +228,36 @@ export class UserService {
       const user = await this.userRepository.findOneBy({ id });
       user.name = requestChangeNameDto.name;
       await this.userRepository.save(user);
+    } catch (error) {
+      throw new Error(error);
+    }
+  }
+
+  async verifyUser(id: number): Promise<void> {
+    try {
+      const user = await this.userRepository.findOneBy({ id });
+      user.isVerified = true;
+      await this.userRepository.save(user);
+    } catch (error) {
+      throw new Error(error);
+    }
+  }
+
+  async resendEmail(id: number): Promise<void> {
+    try {
+      const user = await this.userRepository.findOneBy({ id });
+      await this.mailingService.sendVerificationEMail(
+        user.email,
+        `http://${process.env.HOST}:${process.env.PORT}/user/verify/${user.id}`,
+      );
+    } catch (error) {
+      throw new Error(error);
+    }
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    try {
+      return await this.userRepository.findOneBy({ email });
     } catch (error) {
       throw new Error(error);
     }

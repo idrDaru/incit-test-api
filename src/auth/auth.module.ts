@@ -4,6 +4,7 @@ import { AuthenticationController } from './auth.controller';
 import { JwtModule } from '@nestjs/jwt';
 import * as dotenv from 'dotenv';
 import { SessionModule } from 'src/session/session.module';
+import { AuthService } from './auth.service';
 
 dotenv.config();
 
@@ -17,5 +18,6 @@ dotenv.config();
     }),
   ],
   controllers: [AuthenticationController],
+  providers: [AuthService],
 })
 export class AuthenticationModule {}
