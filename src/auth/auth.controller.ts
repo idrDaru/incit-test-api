@@ -71,7 +71,11 @@ export class AuthenticationController {
         await this.authService.signInByFacebook(signInByFacebookDto);
       res.status(200).json({ access_token }).send();
     } catch (error) {
-      res.status(500).json({ message: 'Internal Server Error' }).send();
+      if (error.message === 'Email not found') {
+        res.status(404).json({ message: 'Email not found' }).send();
+      } else {
+        res.status(500).json({ message: 'Internal Server Error' }).send();
+      }
     }
   }
 

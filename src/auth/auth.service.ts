@@ -57,6 +57,8 @@ export class AuthService {
       const user = await this.userService.findByEmail(
         signInByFacebookDto.email,
       );
+
+      if (!user) throw 'Email not found';
       const payload = { sub: user.id };
       const access_token = await this.jwtService.signAsync(payload);
       await this.sessionService.login(user, access_token);
